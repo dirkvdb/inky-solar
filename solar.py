@@ -9,21 +9,28 @@ import argparse
 from datetime import datetime
 import numpy as np
 from typing import Tuple
-from pandas import DataFrame
-import pandas as pd
 import pytz
 from dataclasses import dataclass
-from enum import IntEnum, StrEnum
+from enum import IntEnum
+from pyrect import Rect
 from PIL import Image, ImageFont, ImageDraw
 from font_source_serif_pro import SourceSerifProSemibold
 from font_source_sans_pro import SourceSansProSemibold
 from font_font_awesome import FontAwesome5FreeSolid
-from pyrect import Rect
 import fontawesome as fa
-import plotly.express as px
-import plotly.graph_objects as go
-
 import paho.mqtt.client as mqtt
+
+try:
+    from pandas import DataFrame
+    import pandas as pd
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    graphing_support = True
+except:
+    graphing_support = False
+    print("graphs not available")
+
 
 TOPIC_SOLAR = "pvpanelendak/PUB/CH1"
 TOPIC_NETTO = "244cab25438c/PUB/CH0"
@@ -52,16 +59,16 @@ class Font(IntEnum):
     ROBOTO_REGULAR = 3
 
 
-class HAlign(StrEnum):
-    LEFT = "l"
-    RIGHT = "r"
-    CENTER = "m"
+class HAlign(IntEnum):
+    LEFT = 0
+    RIGHT = 1
+    CENTER = 2
 
 
-class VAlign(StrEnum):
-    TOP = "t"
-    BOTTOM = "b"
-    MIDDLE = "m"
+class VAlign(IntEnum):
+    TOP = 0
+    BOTTOM = 1
+    MIDDLE = 2
 
 
 class DisplayData:
@@ -72,8 +79,8 @@ class DisplayData:
     import_today: float
     solar_current: float
     solar_today: float
-    solar_values: DataFrame
     last_solar_time: int
+    solar_values = None
     timezone = None
 
     def __init__(self):
@@ -84,12 +91,17 @@ class DisplayData:
         self.import_today = 0.0
         self.solar_current = 0.0
         self.solar_today = 0.0
-        self.solar_values = DataFrame(columns=["time", "value"])
+        if graphing_support:
+            self.solar_values = DataFrame(columns=["time", "value"])
         self.last_solar_time = 0
         self.timezone = pytz.timezone("Europe/Brussels")
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
+        update_required = minute_in_the_day > self.last_solar_time
+        
+        if not graphing_support:
+            return update_required
 
         df = DataFrame.from_dict({"time": [minute_in_the_day], "value": [value]})
         if minute_in_the_day < self.last_solar_time:
@@ -100,6 +112,7 @@ class DisplayData:
             self.solar_values = pd.concat([self.solar_values, df])
 
         self.last_solar_time = minute_in_the_day
+        return update_required
 
 
 def format_watts(val: float):
@@ -157,10 +170,8 @@ class DashImage:
 
     def __init__(self, width: int, height: int, simulate: bool):
         if not simulate:
-            import inky
-
-            self.display = inky.auto(ask_user=False, verbose=True)
-            self.img.putpalette()
+            from inky import InkyWHAT
+            self.display = InkyWHAT('black')
             self.width = self.display.WIDTH
             self.height = self.display.HEIGHT
         else:
@@ -175,17 +186,17 @@ class DashImage:
 
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
-            match font_def[0]:
-                case Font.ROBOTO_BOLD:
-                    self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-bold.ttf", size=font_def[1])
-                case Font.ROBOTO_LIGHT:
-                    self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-light.ttf", size=font_def[1])
-                case Font.ROBOTO_REGULAR:
-                    self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-regular.ttf", size=font_def[1])
-                case Font.FONT_AWESOME:
-                    self.fonts[font_def] = ImageFont.truetype(FontAwesome5FreeSolid, size=font_def[1])
-                case _:
-                    raise RuntimeError("Invalid font")
+            fond_code = font_def[0]
+            if fond_code == Font.ROBOTO_BOLD:
+                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Bold.ttf", size=font_def[1])
+            elif fond_code == Font.ROBOTO_LIGHT:
+                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Light.ttf", size=font_def[1])
+            elif fond_code == Font.ROBOTO_REGULAR:
+                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Regular.ttf", size=font_def[1])
+            elif fond_code == Font.FONT_AWESOME:
+                self.fonts[font_def] = ImageFont.truetype(FontAwesome5FreeSolid, size=font_def[1])
+            else:
+                raise RuntimeError("Invalid font")
 
         return self.fonts[font_def]
 
@@ -199,7 +210,10 @@ class DashImage:
         self.draw_info_icon(1, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
         self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel", colored_background=high_export)
 
-        self.draw_graph(disp_data)
+        if graphing_support:
+            self.draw_graph(disp_data)
+
+        self.show()
 
     def info_icon_bbox(self, index: int):
         icon_space_width = (self.width - (self.margin_hor * 2) - (self.icon_columns - 1) * self.padding) / self.icon_columns
@@ -274,10 +288,11 @@ class DashImage:
         graph_img = Image.fromarray(paletted_data, mode="P")
         graph_img.putpalette(ylw_inky_palette)
         self.img.paste(graph_img, bbox.topleft)
-        self.show()
 
     def show(self):
         if self.display:
+            print("Update")
+            self.display.set_image(self.img)
             self.display.show()
         else:
             self.img.convert("RGB").show()
@@ -293,24 +308,25 @@ class DashImage:
         # size = (right - left, bottom - top)
         size = self.size_text(text, font)
 
-        # Draw
-        anchor = f"{h_align}{v_align}"
-        x, y = bbox.topleft
-        match h_align:
-            case HAlign.LEFT:
-                x = bbox.left
-            case HAlign.CENTER:
-                x = bbox.centerx
-            case HAlign.RIGHT:
-                x = bbox.right
+        halign_code = ["l", "r", "m"]
+        valign_code = ["t", "b", "m"]
 
-        match v_align:
-            case VAlign.TOP:
-                y = bbox.top
-            case VAlign.MIDDLE:
-                y = bbox.centery
-            case VAlign.BOTTOM:
-                y = bbox.bottom
+        # Draw
+        anchor = f"{halign_code[int(h_align)]}{valign_code[int(v_align)]}"
+        x, y = bbox.topleft
+        if h_align == HAlign.LEFT:
+            x = bbox.left
+        elif h_align == HAlign.CENTER:
+            x = bbox.centerx
+        elif h_align == HAlign.RIGHT:
+            x = bbox.right
+
+        if v_align == VAlign.TOP:
+            y = bbox.top
+        elif v_align == VAlign.MIDDLE:
+            y = bbox.centery
+        elif v_align == VAlign.BOTTOM:
+            y = bbox.bottom
 
         self.draw.text((x, y), str(text), fill=color, font=self.__load_font(font), anchor=anchor)
         return size
@@ -338,12 +354,13 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
     data = json.loads(message.payload)
 
     if message.topic == TOPIC_SOLAR:
+        print("Solar data")
         disp_data.solar_current = data["P"]
         disp_data.solar_today = data["DC"]
-        disp_data.append_solar_value(datetime.now(disp_data.timezone), disp_data.solar_current)
+        if disp_data.append_solar_value(datetime.now(disp_data.timezone), disp_data.solar_current):
+            # solar is broadcast every minute, use this as the update interval
+            image.render(disp_data)
 
-        # solar is broadcast every minute, use this as the update interval
-        image.render(disp_data)
     elif message.topic == TOPIC_NETTO:
         imp = float(data["PI"])
         exp = float(data["PE"])
@@ -360,9 +377,9 @@ def subscribe_to_data(mqtt_ip: str, mqtt_port: int, user_data: Tuple[DisplayData
     client = mqtt.Client("statusdisp", protocol=mqtt.MQTTv5)
     client.on_message = on_message
     client.user_data_set(user_data)
-    client.connect(mqtt_ip, mqtt_port)
+    client.connect(mqtt_ip, mqtt_port, keepalive=60)
     client.loop_start()
-    (result, _) = client.subscribe([(TOPIC_SOLAR, 0), (TOPIC_NETTO, 0), (TOPIC_IMPORT, 0), (TOPIC_EXPORT, 0)])
+    (result, _) = client.subscribe([(TOPIC_SOLAR, 0), (TOPIC_NETTO, 0), (TOPIC_IMPORT, 0), (TOPIC_EXPORT, 0)], qos=2)
 
     if result != mqtt.MQTT_ERR_SUCCESS:
         raise RuntimeError("Failed to subscribe to mqtt")
