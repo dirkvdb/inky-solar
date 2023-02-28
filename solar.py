@@ -277,7 +277,10 @@ class DashImage:
         self.show()
 
     def show(self):
-        self.img.convert("RGB").show()
+        if self.display:
+            self.display.show()
+        else:
+            self.img.convert("RGB").show()
 
     def draw_text(self, bbox: Rect, text: str, color: Color, font: Tuple[Font, int], h_align=HAlign.LEFT, v_align=VAlign.BOTTOM):
         """
