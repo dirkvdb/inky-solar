@@ -5,6 +5,7 @@
 
 import json
 import io
+import argparse
 from datetime import datetime
 import numpy as np
 from typing import Tuple
@@ -152,14 +153,25 @@ class DashImage:
     img = None
     draw = None
     fonts = {}
+    display = None
 
-    def __init__(self, width: int, height: int, palette):
-        self.width = width
-        self.height = height
+    def __init__(self, width: int, height: int, simulate: bool):
+        if not simulate:
+            import inky
 
-        self.img = Image.new("P", (WIDTH, HEIGHT), Color.WHITE)
-        self.img.putpalette(palette)
+            self.display = inky.auto(ask_user=False, verbose=True)
+            self.img.putpalette()
+            self.width = self.display.WIDTH
+            self.height = self.display.HEIGHT
+        else:
+            self.width = width
+            self.height = height
+
+        self.img = Image.new("P", (self.width, self.height), Color.WHITE)
         self.draw = ImageDraw.Draw(self.img)
+
+        if simulate:
+            self.img.putpalette(ylw_inky_palette)
 
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
@@ -181,11 +193,11 @@ class DashImage:
         # clear the canvas
         self.draw.rectangle((0, 0, WIDTH, HEIGHT), fill=Color.WHITE)
 
-        # self.draw.rectangle((left, top, left + icon_space_width, left + icon_space_width), fill=Color.COLOR)
+        high_export = disp_data.export_current > 2000
 
-        self.draw_info_icon(0, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
-        self.draw_info_icon(1, format_watts(disp_data.import_current), format_watts(disp_data.import_today), "plug")
-        self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel")
+        self.draw_info_icon(0, format_watts(disp_data.import_current), format_watts(disp_data.import_today), "plug")
+        self.draw_info_icon(1, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
+        self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel", colored_background=high_export)
 
         self.draw_graph(disp_data)
 
@@ -204,13 +216,14 @@ class DashImage:
 
         return graph_bbox
 
-    def draw_info_icon(self, index: int, text_top: str, text_bottom: str, icon: str):
+    def draw_info_icon(self, index: int, text_top: str, text_bottom: str, icon: str, colored_background: bool = False):
         bbox = self.info_icon_bbox(index)
 
         text_height = bbox.height / 4
         icon_height = bbox.height / 2
 
-        # self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=Color.COLOR)
+        if colored_background:
+            self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=Color.COLOR)
 
         text_rect = Rect(bbox.left, bbox.top, bbox.width, text_height)
         self.draw_text(
@@ -340,11 +353,11 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
         disp_data.export_today = float(data["DC"])
 
 
-def subscribe_to_data(user_data: Tuple[DisplayData, DashImage]):
-    client = mqtt.Client("statusdisp")
+def subscribe_to_data(mqtt_ip: str, mqtt_port: int, user_data: Tuple[DisplayData, DashImage]):
+    client = mqtt.Client("statusdisp", protocol=mqtt.MQTTv5)
     client.on_message = on_message
     client.user_data_set(user_data)
-    client.connect("192.168.1.13")
+    client.connect(mqtt_ip, mqtt_port)
     client.loop_start()
     (result, _) = client.subscribe([(TOPIC_SOLAR, 0), (TOPIC_NETTO, 0), (TOPIC_IMPORT, 0), (TOPIC_EXPORT, 0)])
 
@@ -353,9 +366,15 @@ def subscribe_to_data(user_data: Tuple[DisplayData, DashImage]):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mqtt-addr", "-m", type=str, required=True, help="IP address of the mqtt server")
+    parser.add_argument("--mqtt-port", "-p", type=int, required=False, default=1883, help="IP address of the mqtt server")
+    parser.add_argument("--simulate", "-s", action=argparse.BooleanOptionalAction, help="Support running without inky display")
+    args = parser.parse_args()
+
     disp_data = DisplayData()
-    img = DashImage(WIDTH, HEIGHT, ylw_inky_palette)
-    subscribe_to_data((disp_data, img))
+    img = DashImage(WIDTH, HEIGHT, simulate=args.simulate)
+    subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
 
     # img.render(disp_data)
     # img.show()
