@@ -142,6 +142,8 @@ class DashImage:
     fonts = {}
     display = None
     palette = None
+    figure = None
+    graph_line = None
 
     def __init__(self, width: int, height: int, simulate: bool):
         if not simulate:
@@ -157,16 +159,14 @@ class DashImage:
             self.height = height
 
         self.img = Image.new("P", (self.width, self.height), Color.WHITE)
+        self.img.putpalette(bw_inky_palette)
         self.draw = ImageDraw.Draw(self.img)
 
-        ylw_inky_palette_rgb = [
-            [255, 255, 255],  # 0 = white
-            [0, 0, 0],  # 1 = black
-            [223, 204, 16],
-        ]
-
-        if simulate:
-            self.img.putpalette(ylw_inky_palette)
+        bbox = self.graph_bbox()
+        dpi = 80
+        self.figure = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
+        self.graph_line = matplotlib.lines.Line2D([], [], lw=1, ls="-", snap=True)
+        self.figure.add_artist(self.graph_line)
 
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
@@ -245,14 +245,12 @@ class DashImage:
         )
 
     def draw_graph(self, data: DisplayData):
-        dpi = 80
         buf = io.BytesIO()
         bbox = self.graph_bbox()
 
-        fig = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
-        fig.add_artist(matplotlib.lines.Line2D(data.solar_values_minute, data.solar_values_power, lw=1, ls="-", snap=True))
-        fig.savefig(buf, format="png")
-
+        self.graph_line.set_xdata(data.solar_values_minute)
+        self.graph_line.set_ydata(data.solar_values_power)
+        self.figure.savefig(buf, format="png")
         plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
         self.img.paste(plot_image, bbox.topleft)
 
