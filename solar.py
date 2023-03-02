@@ -135,13 +135,16 @@ class DisplayData:
             # predictions already obtained for the current day
             return
 
-        print("Update solar predictions")
-        estimations = asyncio.run(get_solar_forecast())
-        for timestamp, est in estimations.watts.items():
-            if timestamp.date() == date.today():
-                minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
-                self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
-                self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
+        try:
+            print("Update solar predictions")
+            estimations = asyncio.run(get_solar_forecast())
+            for timestamp, est in estimations.watts.items():
+                if timestamp.date() == date.today():
+                    minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
+                    self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
+                    self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
+        except Exception as e:
+            print("Failed to obtain solar predictions: {e}")
 
 
 def format_watts(val: float):
@@ -308,7 +311,7 @@ class DashImage:
         plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
         self.img.paste(plot_image, bbox.topleft)
 
-        self.draw.rectangle((bbox.topleft, bbox.bottomright), outline="black", width=1)
+        self.draw.rectangle((bbox.topleft, bbox.bottomright), outline=Color.BLACK, width=1)
 
     def show(self):
         print("[{}] Update".format(datetime.now().strftime("%H:%M:%S")))
