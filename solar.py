@@ -144,6 +144,7 @@ class DisplayData:
                     minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
                     self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
+                    print(f"Prediction for {timestamp.date()} {est}Wh")
         except Exception as e:
             print("Failed to obtain solar predictions: {e}")
 
