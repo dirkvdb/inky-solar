@@ -144,7 +144,7 @@ class DisplayData:
                     minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
                     self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
-                    print(f"Prediction for {timestamp.date()} {est}Wh")
+                    print(f"Prediction for {timestamp.date()} {timestamp.hour}:{timestamp.minute} {est}Wh")
         except Exception as e:
             print(f"Failed to obtain solar predictions: {e}")
 
@@ -223,6 +223,22 @@ class DashImage:
         self.figure.add_artist(self.graph_line_actual)
         self.figure.add_artist(self.graph_line_estimate)
 
+    def draw_graph(self, data: DisplayData):
+        buf = io.BytesIO()
+        bbox = self.graph_bbox()
+
+        self.graph_line_actual.set_xdata(data.solar_values_minute)
+        self.graph_line_actual.set_ydata(data.solar_values_power)
+
+        self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
+        self.graph_line_estimate.set_ydata(data.solar_predictions_power)
+
+        self.figure.savefig(buf, format="png")
+        plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
+        self.img.paste(plot_image, bbox.topleft)
+
+        self.draw.rectangle((bbox.topleft, bbox.bottomright), outline=Color.BLACK, width=1)
+
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
             fond_code = font_def[0]
@@ -298,22 +314,6 @@ class DashImage:
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
-
-    def draw_graph(self, data: DisplayData):
-        buf = io.BytesIO()
-        bbox = self.graph_bbox()
-
-        self.graph_line_actual.set_xdata(data.solar_values_minute)
-        self.graph_line_actual.set_ydata(data.solar_values_power)
-
-        self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
-        self.graph_line_estimate.set_ydata(data.solar_predictions_power)
-
-        self.figure.savefig(buf, format="png")
-        plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
-        self.img.paste(plot_image, bbox.topleft)
-
-        self.draw.rectangle((bbox.topleft, bbox.bottomright), outline=Color.BLACK, width=1)
 
     def show(self):
         print("[{}] Update".format(datetime.now().strftime("%H:%M:%S")))
