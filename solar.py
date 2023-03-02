@@ -258,7 +258,7 @@ class DashImage:
         self.img.paste(plot_image, bbox.topleft)
 
     def show(self):
-        print(f"[{time.time()}] Update")
+        print("[{}] Update", time.time().strftime("%H:%M:%S"))
         if self.display:
             self.display.set_image(self.img)
             self.display.show()
