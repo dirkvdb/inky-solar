@@ -219,7 +219,7 @@ class DashImage:
         dpi = 80
         self.figure = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
         self.graph_line_actual = matplotlib.lines.Line2D([], [], lw=3, ls="-", snap=True)
-        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=1, linestyle=(0, (5, 10)), snap=True)
+        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=2, linestyle=(0, (5, 10)), snap=True)
         self.figure.add_artist(self.graph_line_actual)
         self.figure.add_artist(self.graph_line_estimate)
 
