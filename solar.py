@@ -3,17 +3,15 @@
 
 # from inky.auto import auto
 
-import json
-import io
-import argparse
+import io, asyncio, os, pytz, json, argparse
 from datetime import datetime
-import numpy as np
+from datetime import date
 from typing import Tuple
-import pytz
 from enum import IntEnum
 from pyrect import Rect
 from PIL import Image, ImageFont, ImageDraw
 from font_font_awesome import FontAwesome5FreeSolid
+from forecast_solar import ForecastSolar
 import fontawesome as fa
 import paho.mqtt.client as mqtt
 import matplotlib
@@ -56,6 +54,19 @@ class VAlign(IntEnum):
     MIDDLE = 2
 
 
+async def get_solar_forecast():
+    async with ForecastSolar(
+        latitude=51.23747747561697,
+        longitude=5.287941297968982,
+        declination=45,
+        azimuth=135,
+        kwp=8.0,
+        damping_morning=0.2,
+        damping_evening=0,
+    ) as forecast:
+        return await forecast.estimate()
+
+
 class DisplayData:
     netto_current: float
     export_current: float
@@ -65,11 +76,14 @@ class DisplayData:
     solar_current: float
     solar_today: float
     last_solar_time: int
+    forecast: bool
+    timezone = None
     solar_values_minute = []
     solar_values_power = []
-    timezone = None
+    solar_predictions_minute = []
+    solar_predictions_power = []
 
-    def __init__(self):
+    def __init__(self, forecast: bool = False):
         self.netto_current = 0.0
         self.export_current = 0.0
         self.export_today = 0.0
@@ -77,8 +91,9 @@ class DisplayData:
         self.import_today = 0.0
         self.solar_current = 0.0
         self.solar_today = 0.0
-        self.last_solar_time = 0
+        self.last_solar_time = MINUTES_IN_A_DAY + 1
         self.timezone = pytz.timezone("Europe/Brussels")
+        self.forecast = forecast
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
@@ -86,7 +101,25 @@ class DisplayData:
 
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
-            self.solar_values_minute = [minute_in_the_day] / MINUTES_IN_A_DAY
+            self.solar_predictions_minute = []
+            self.solar_predictions_power = []
+            self.solar_values_minute = [minute_in_the_day]
+            self.solar_values_power = [value]
+        else:
+            # append to todays timeseries
+            self.solar_values_minute.append(minute_in_the_day)
+            self.solar_values_power.append(value)
+
+        self.last_solar_time = minute_in_the_day
+        return update_required
+
+    def append_solar_value_normalized(self, timestamp: datetime, value: float):
+        minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
+        update_required = minute_in_the_day > self.last_solar_time
+
+        if minute_in_the_day < self.last_solar_time:
+            # new day started, reset the timeseries to the new value
+            self.solar_values_minute = [minute_in_the_day / MINUTES_IN_A_DAY]
             self.solar_values_power = [value / MAX_SOLAR_POWER]
         else:
             # append to todays timeseries
@@ -94,7 +127,21 @@ class DisplayData:
             self.solar_values_power.append(value / MAX_SOLAR_POWER)
 
         self.last_solar_time = minute_in_the_day
+        self.update_solar_prediction_if_needed()
         return update_required
+
+    def update_solar_prediction_if_needed(self):
+        if (not self.forecast) or len(self.solar_predictions_minute) > 0:
+            # predictions already obtained for the current day
+            return
+
+        print("Update solar predictions")
+        estimations = asyncio.run(get_solar_forecast())
+        for timestamp, est in estimations.watts.items():
+            if timestamp.date() == date.today():
+                minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
+                self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
+                self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
 
 
 def format_watts(val: float):
@@ -143,7 +190,8 @@ class DashImage:
     display = None
     palette = None
     figure = None
-    graph_line = None
+    graph_line_actual = None
+    graph_line_estimate = None
 
     def __init__(self, width: int, height: int, simulate: bool):
         if not simulate:
@@ -165,8 +213,10 @@ class DashImage:
         bbox = self.graph_bbox()
         dpi = 80
         self.figure = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
-        self.graph_line = matplotlib.lines.Line2D([], [], lw=1, ls="-", snap=True)
-        self.figure.add_artist(self.graph_line)
+        self.graph_line_actual = matplotlib.lines.Line2D([], [], lw=3, ls="-", snap=True)
+        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=1, linestyle=(0, (5, 10)), snap=True)
+        self.figure.add_artist(self.graph_line_actual)
+        self.figure.add_artist(self.graph_line_estimate)
 
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
@@ -248,11 +298,17 @@ class DashImage:
         buf = io.BytesIO()
         bbox = self.graph_bbox()
 
-        self.graph_line.set_xdata(data.solar_values_minute)
-        self.graph_line.set_ydata(data.solar_values_power)
+        self.graph_line_actual.set_xdata(data.solar_values_minute)
+        self.graph_line_actual.set_ydata(data.solar_values_power)
+
+        self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
+        self.graph_line_estimate.set_ydata(data.solar_predictions_power)
+
         self.figure.savefig(buf, format="png")
         plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
         self.img.paste(plot_image, bbox.topleft)
+
+        self.draw.rectangle((bbox.topleft, bbox.bottomright), outline="black", width=1)
 
     def show(self):
         print("[{}] Update".format(datetime.now().strftime("%H:%M:%S")))
@@ -262,7 +318,7 @@ class DashImage:
         else:
             self.img.convert("RGB").show()
 
-    def draw_text(self, bbox: Rect, text: str, color: Color, font: Tuple[Font, int], h_align=HAlign.LEFT, v_align=VAlign.BOTTOM):
+    def draw_text(self, bbox: Rect, text: str, color: Color, font: Tuple[Font, int], h_align: HAlign = HAlign.LEFT, v_align: VAlign = VAlign.BOTTOM):
         """
         Draws text and returns its size
         """
@@ -345,18 +401,22 @@ if __name__ == "__main__":
     parser.add_argument("--mqtt-addr", "-m", type=str, required=True, help="IP address of the mqtt server")
     parser.add_argument("--mqtt-port", "-p", type=int, required=False, default=1883, help="IP address of the mqtt server")
     parser.add_argument("--simulate", "-s", action=argparse.BooleanOptionalAction, help="Support running without inky display")
+    parser.add_argument("--forecast", "-f", action=argparse.BooleanOptionalAction, help="Display the solar forecast in the graph")
     args = parser.parse_args()
 
     img = DashImage(WIDTH, HEIGHT, simulate=args.simulate)
-    disp_data = DisplayData()
+    disp_data = DisplayData(forecast=args.forecast)
 
     if args.simulate:
+        if os.name == "nt":
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
         # generate some data for testing
         import random
 
         for h in range(0, 24):
             for m in range(0, 60):
-                disp_data.append_solar_value(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
+                disp_data.append_solar_value_normalized(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
         img.render(disp_data)
     else:
         subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
