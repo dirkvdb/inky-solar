@@ -146,7 +146,7 @@ class DisplayData:
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
                     print(f"Prediction for {timestamp.date()} {est}Wh")
         except Exception as e:
-            print("Failed to obtain solar predictions: {e}")
+            print(f"Failed to obtain solar predictions: {e}")
 
 
 def format_watts(val: float):
