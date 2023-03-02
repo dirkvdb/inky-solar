@@ -5,31 +5,20 @@
 
 import json
 import io
+import time
 import argparse
 from datetime import datetime
 import numpy as np
 from typing import Tuple
 import pytz
-from dataclasses import dataclass
 from enum import IntEnum
 from pyrect import Rect
 from PIL import Image, ImageFont, ImageDraw
-from font_source_serif_pro import SourceSerifProSemibold
-from font_source_sans_pro import SourceSansProSemibold
 from font_font_awesome import FontAwesome5FreeSolid
 import fontawesome as fa
 import paho.mqtt.client as mqtt
-
-try:
-    from pandas import DataFrame
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objects as go
-
-    graphing_support = True
-except:
-    graphing_support = False
-    print("graphs not available")
+import matplotlib
+from matplotlib import pyplot as plt
 
 
 TOPIC_SOLAR = "pvpanelendak/PUB/CH1"
@@ -37,13 +26,10 @@ TOPIC_NETTO = "244cab25438c/PUB/CH0"
 TOPIC_IMPORT = "244cab25438c/PUB/CH2"
 TOPIC_EXPORT = "244cab25438c/PUB/CH3"
 MINUTES_IN_A_DAY = 24 * 60
+MAX_SOLAR_POWER = 8000
 
 FONT_SIZE = 40
 ICON_FONT_SIZE = 32
-
-# white_color = inky_display.WHITE
-# black_color = inky_display.BLACK
-# red_color = inky_display.RED
 
 
 class Color(IntEnum):
@@ -80,7 +66,8 @@ class DisplayData:
     solar_current: float
     solar_today: float
     last_solar_time: int
-    solar_values = None
+    solar_values_minute = []
+    solar_values_power = []
     timezone = None
 
     def __init__(self):
@@ -91,25 +78,21 @@ class DisplayData:
         self.import_today = 0.0
         self.solar_current = 0.0
         self.solar_today = 0.0
-        if graphing_support:
-            self.solar_values = DataFrame(columns=["time", "value"])
         self.last_solar_time = 0
         self.timezone = pytz.timezone("Europe/Brussels")
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
         update_required = minute_in_the_day > self.last_solar_time
-        
-        if not graphing_support:
-            return update_required
 
-        df = DataFrame.from_dict({"time": [minute_in_the_day], "value": [value]})
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
-            self.solar_values = df
+            self.solar_values_minute = [minute_in_the_day] / MINUTES_IN_A_DAY
+            self.solar_values_power = [value / MAX_SOLAR_POWER]
         else:
             # append to todays timeseries
-            self.solar_values = pd.concat([self.solar_values, df])
+            self.solar_values_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
+            self.solar_values_power.append(value / MAX_SOLAR_POWER)
 
         self.last_solar_time = minute_in_the_day
         return update_required
@@ -122,14 +105,6 @@ def format_watts(val: float):
         return "{:.1f}kW".format(val / 1000.0)
 
 
-# Set up the correct display and scaling factors
-
-# inky_display = auto(ask_user=True, verbose=True)
-# inky_display.set_border(inky_display.WHITE)
-# inky_display.set_rotation(180)
-
-# WIDTH = inky_display.width
-# HEIGHT = inky_display.height
 WIDTH = 400
 HEIGHT = 300
 
@@ -167,11 +142,13 @@ class DashImage:
     draw = None
     fonts = {}
     display = None
+    palette = None
 
     def __init__(self, width: int, height: int, simulate: bool):
         if not simulate:
-            import inky
-            self.display = inky.InkyWHAT('black')
+            from inky import InkyWHAT
+
+            self.display = InkyWHAT("black")
             self.display.h_flip = True
             self.display.v_flip = True
             self.width = self.display.WIDTH
@@ -182,6 +159,12 @@ class DashImage:
 
         self.img = Image.new("P", (self.width, self.height), Color.WHITE)
         self.draw = ImageDraw.Draw(self.img)
+
+        ylw_inky_palette_rgb = [
+            [255, 255, 255],  # 0 = white
+            [0, 0, 0],  # 1 = black
+            [223, 204, 16],
+        ]
 
         if simulate:
             self.img.putpalette(ylw_inky_palette)
@@ -211,9 +194,7 @@ class DashImage:
         self.draw_info_icon(0, format_watts(disp_data.import_current), format_watts(disp_data.import_today), "plug")
         self.draw_info_icon(1, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
         self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel", colored_background=high_export)
-
-        if graphing_support:
-            self.draw_graph(disp_data)
+        self.draw_graph(disp_data)
 
         self.show()
 
@@ -265,35 +246,20 @@ class DashImage:
         )
 
     def draw_graph(self, data: DisplayData):
+        dpi = 80
+        buf = io.BytesIO()
         bbox = self.graph_bbox()
-        # data = DataFrame.from_records(data.todays_values)
-        fig = go.Figure()
-        # fig = px.line(data, x=x, y=y, width=bbox.width, height=bbox.height)
-        fig = px.line(data.solar_values, x="time", y="value")
-        fig.update_layout(showlegend=False)
-        fig.update_xaxes(visible=False, showticklabels=False, range=[0, MINUTES_IN_A_DAY])
-        fig.update_yaxes(visible=False, showticklabels=False, range=[0, 8000])
-        fig.update_layout(showlegend=False, plot_bgcolor="white", autosize=False, width=bbox.width, height=bbox.height, margin=dict(t=0, l=0, b=0, r=0))
-        # fig.show()
 
-        # self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=Color.COLOR)
-        # graph_img = Image.open(io.BytesIO(fig.to_image(format="png"))).convert("P", palette=bw_inky_palette, dither=Image.Dither.FLOYDSTEINBERG)
-        graph_img = Image.open(io.BytesIO(fig.to_image(format="png"))).convert("RGB")
-        img_data = np.asarray(graph_img)
-        paletted_data = np.ndarray((bbox.height, bbox.width), dtype=np.uint8)
-        paletted_data.fill(Color.WHITE)
+        fig = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
+        fig.add_artist(matplotlib.lines.Line2D(data.solar_values_minute, data.solar_values_power, lw=1, ls="-", snap=True))
+        fig.savefig(buf, format="png")
 
-        mask = (img_data != 255).all(axis=-1)
-        paletted_data[mask] = Color.BLACK
-        # paletted_data[mask] = Color.BLACK
-
-        graph_img = Image.fromarray(paletted_data, mode="P")
-        graph_img.putpalette(ylw_inky_palette)
-        self.img.paste(graph_img, bbox.topleft)
+        plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
+        self.img.paste(plot_image, bbox.topleft)
 
     def show(self):
+        print(f"[{time.time()}] Update")
         if self.display:
-            print("Update")
             self.display.set_image(self.img)
             self.display.show()
         else:
@@ -304,10 +270,6 @@ class DashImage:
         Draws text and returns its size
         """
         # Calculate size
-        # size = self.draw.textsize(str(text), font=self.fonts[int(font)])
-        # size = self.draw.textlength(str(text), font=self.fonts[int(font)])
-        # (left, top, right, bottom) = self.draw.textbbox(str(text), font=self.__load_font(font))
-        # size = (right - left, bottom - top)
         size = self.size_text(text, font)
 
         halign_code = ["l", "r", "m"]
@@ -343,12 +305,6 @@ class DashImage:
         # Calculate size
         (left, top, right, bottom) = self.draw.textbbox((0, 0), str(text), font=self.__load_font(font))
         return Rect(left, top, right - left, bottom - top)
-
-
-# Display the completed canvas on Inky wHAT
-
-# inky_display.set_image(img)
-# inky_display.show()
 
 
 def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
@@ -394,10 +350,17 @@ if __name__ == "__main__":
     parser.add_argument("--simulate", "-s", action=argparse.BooleanOptionalAction, help="Support running without inky display")
     args = parser.parse_args()
 
-    disp_data = DisplayData()
     img = DashImage(WIDTH, HEIGHT, simulate=args.simulate)
-    subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
+    disp_data = DisplayData()
 
-    # img.render(disp_data)
-    # img.show()
-    input("Press Enter to continue.\n")
+    if args.simulate:
+        # generate some data for testing
+        import random
+
+        for h in range(0, 24):
+            for m in range(0, 60):
+                disp_data.append_solar_value(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
+        img.render(disp_data)
+    else:
+        subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
+        input("Press Enter to continue.\n")
