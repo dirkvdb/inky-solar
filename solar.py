@@ -170,8 +170,10 @@ class DashImage:
 
     def __init__(self, width: int, height: int, simulate: bool):
         if not simulate:
-            from inky import InkyWHAT
-            self.display = InkyWHAT('black')
+            import inky
+            self.display = inky.InkyWHAT('black')
+            self.display.h_flip = True
+            self.display.v_flip = True
             self.width = self.display.WIDTH
             self.height = self.display.HEIGHT
         else:
