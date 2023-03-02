@@ -111,6 +111,7 @@ class DisplayData:
             self.solar_values_power.append(value)
 
         self.last_solar_time = minute_in_the_day
+        self.update_solar_prediction_if_needed()
         return update_required
 
     def append_solar_value_normalized(self, timestamp: datetime, value: float):
@@ -371,7 +372,7 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
         print("[{}] Solar data".format(datetime.now().strftime("%H:%M:%S")))
         disp_data.solar_current = data["P"]
         disp_data.solar_today = data["DC"]
-        if disp_data.append_solar_value(datetime.now(disp_data.timezone), disp_data.solar_current):
+        if disp_data.append_solar_value_normalized(datetime.now(disp_data.timezone), disp_data.solar_current):
             # solar is broadcast every minute, use this as the update interval
             image.render(disp_data)
 
