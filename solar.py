@@ -54,6 +54,11 @@ class VAlign(IntEnum):
     MIDDLE = 2
 
 
+def average(lst):
+    elements = len(lst)
+    return 0 if elements == 0 else sum(lst) / len(lst)
+
+
 async def get_solar_forecast():
     async with ForecastSolar(
         latitude=51.23747747561697,
@@ -80,6 +85,7 @@ class DisplayData:
     timezone = None
     solar_values_minute = []
     solar_values_power = []
+    solar_hourly_values = {}
     solar_predictions_minute = []
     solar_predictions_power = []
 
@@ -94,6 +100,12 @@ class DisplayData:
         self.last_solar_time = MINUTES_IN_A_DAY + 1
         self.timezone = pytz.timezone("Europe/Brussels")
         self.forecast = forecast
+        self.reset_hourly_values()
+
+    def reset_hourly_values(self):
+        self.solar_hourly_values = []
+        for i in range(0, 24):
+            self.solar_hourly_values.append([])
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
@@ -101,6 +113,7 @@ class DisplayData:
 
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
+            self.reset_hourly_values()
             self.solar_predictions_minute = []
             self.solar_predictions_power = []
             self.solar_values_minute = [minute_in_the_day]
@@ -110,6 +123,7 @@ class DisplayData:
             self.solar_values_minute.append(minute_in_the_day)
             self.solar_values_power.append(value)
 
+        self.solar_hourly_values[timestamp.hour].append(value)
         self.last_solar_time = minute_in_the_day
         self.update_solar_prediction_if_needed()
         return update_required
@@ -120,6 +134,9 @@ class DisplayData:
 
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
+            self.reset_hourly_values()
+            self.solar_predictions_minute = []
+            self.solar_predictions_power = []
             self.solar_values_minute = [minute_in_the_day / MINUTES_IN_A_DAY]
             self.solar_values_power = [value / MAX_SOLAR_POWER]
         else:
@@ -127,6 +144,7 @@ class DisplayData:
             self.solar_values_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
             self.solar_values_power.append(value / MAX_SOLAR_POWER)
 
+        self.solar_hourly_values[timestamp.hour].append(value)
         self.last_solar_time = minute_in_the_day
         self.update_solar_prediction_if_needed()
         return update_required
@@ -197,8 +215,9 @@ class DashImage:
     figure = None
     graph_line_actual = None
     graph_line_estimate = None
+    graph_bars = None
 
-    def __init__(self, width: int, height: int, simulate: bool):
+    def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False):
         if not simulate:
             from inky import InkyWHAT
 
@@ -218,17 +237,39 @@ class DashImage:
         bbox = self.graph_bbox()
         dpi = 80
         self.figure = plt.figure(figsize=[bbox.width / dpi, bbox.height / dpi], dpi=dpi, frameon=False)
-        self.graph_line_actual = matplotlib.lines.Line2D([], [], lw=3, ls="-", snap=True)
-        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=2, linestyle=(0, (5, 10)), snap=True)
-        self.figure.add_artist(self.graph_line_actual)
+
+        if bar_chart:
+            x = 0
+            bar_width = 1 / 24
+            self.graph_bars = []
+
+            for i in range(0, 24):
+                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="none", ec="black", lw=0.1)
+                self.graph_bars.append(bar)
+                x += bar_width
+
+            for bar in self.graph_bars:
+                self.figure.add_artist(bar)
+        else:
+            # line chart
+            self.graph_line_actual = matplotlib.lines.Line2D([], [], lw=3, ls="-", snap=True)
+            self.figure.add_artist(self.graph_line_actual)
+
+        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=2, linestyle=(0, (5, 6)), snap=True)
         self.figure.add_artist(self.graph_line_estimate)
 
     def draw_graph(self, data: DisplayData):
         buf = io.BytesIO()
         bbox = self.graph_bbox()
 
-        self.graph_line_actual.set_xdata(data.solar_values_minute)
-        self.graph_line_actual.set_ydata(data.solar_values_power)
+        if self.graph_line_actual:
+            self.graph_line_actual.set_xdata(data.solar_values_minute)
+            self.graph_line_actual.set_ydata(data.solar_values_power)
+
+        if self.graph_bars:
+            for i in range(0, 24):
+                values = data.solar_hourly_values[i]
+                self.graph_bars[i].set_height(average(values) / MAX_SOLAR_POWER)
 
         self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
         self.graph_line_estimate.set_ydata(data.solar_predictions_power)
@@ -409,7 +450,7 @@ if __name__ == "__main__":
     parser.add_argument("--forecast", "-f", action=argparse.BooleanOptionalAction, help="Display the solar forecast in the graph")
     args = parser.parse_args()
 
-    img = DashImage(WIDTH, HEIGHT, simulate=args.simulate)
+    img = DashImage(WIDTH, HEIGHT, simulate=args.simulate, bar_chart=True)
     disp_data = DisplayData(forecast=args.forecast)
 
     if args.simulate:
