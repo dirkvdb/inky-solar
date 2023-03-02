@@ -5,7 +5,6 @@
 
 import json
 import io
-import time
 import argparse
 from datetime import datetime
 import numpy as np
@@ -258,7 +257,7 @@ class DashImage:
         self.img.paste(plot_image, bbox.topleft)
 
     def show(self):
-        print("[{}] Update", time.time().strftime("%H:%M:%S"))
+        print("[{}] Update".format(datetime.now().strftime("%H:%M:%S")))
         if self.display:
             self.display.set_image(self.img)
             self.display.show()
@@ -312,7 +311,7 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
     data = json.loads(message.payload)
 
     if message.topic == TOPIC_SOLAR:
-        print("Solar data")
+        print("[{}] Solar data".format(datetime.now().strftime("%H:%M:%S")))
         disp_data.solar_current = data["P"]
         disp_data.solar_today = data["DC"]
         if disp_data.append_solar_value(datetime.now(disp_data.timezone), disp_data.solar_current):
