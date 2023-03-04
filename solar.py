@@ -185,16 +185,16 @@ class DisplayData:
 
 def format_watts(val: float):
     if val < 1000:
-        return "{:.0f}W".format(val)
+        return "{:.0f} W".format(val)
     else:
-        return "{:.1f}kW".format(val / 1000.0)
+        return "{:.1f} kW".format(val / 1000.0)
 
 
 def format_watt_hours(val: float):
     if val < 1000:
-        return "{:.0f}Wh".format(val)
+        return "{:.0f} Wh".format(val)
     else:
-        return "{:.1f}kWh".format(val / 1000.0)
+        return "{:.1f} kWh".format(val / 1000.0)
 
 
 WIDTH = 400
@@ -247,7 +247,7 @@ class DashImage:
         if not simulate:
             from inky import InkyWHAT
 
-            self.display = InkyWHAT("black")
+            self.display = InkyWHAT("yellow" if color else "black")
             self.display.h_flip = True
             self.display.v_flip = True
             self.width = self.display.WIDTH
@@ -275,7 +275,7 @@ class DashImage:
             self.graph_bars_actual = []
             self.graph_bars_estimate = []
 
-            fc_estimate = "yellow" if color else "none"
+            fc_estimate = "#DFCC10" if color else "none"
 
             for _ in range(0, 24):
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
