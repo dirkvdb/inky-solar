@@ -234,6 +234,7 @@ class DashImage:
     graph_bars_actual = None
     graph_bars_estimate = None
     table = False
+    table_row_height = 40
 
     def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False, table: bool = False, color: bool = False):
         if not simulate:
@@ -374,10 +375,9 @@ class DashImage:
 
     def table_row_bbox(self, index: int) -> Rect:
         table_width = self.width - (self.margin_hor * 2)
-        row_height = 50
-        top_left = (self.margin_hor, self.margin_ver + (index * row_height))
+        top_left = (self.margin_hor, self.margin_ver + (index * self.table_row_height))
 
-        return Rect(top_left[0], top_left[1], table_width, row_height)
+        return Rect(top_left[0], top_left[1], table_width, self.table_row_height)
 
     def table_bbox(self):
         row_count = 3
@@ -410,7 +410,7 @@ class DashImage:
             text_rect,
             texts[0],
             Color.WHITE,
-            (Font.BITTER_PRO_BLACK, 26),
+            (Font.BITTER_PRO_BLACK, 22),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
@@ -421,7 +421,7 @@ class DashImage:
                 text_rect,
                 txt,
                 Color.BLACK,
-                (Font.BITTER_PRO_BLACK, 25),
+                (Font.BITTER_PRO_BLACK, 22),
                 HAlign.CENTER,
                 VAlign.MIDDLE,
             )
