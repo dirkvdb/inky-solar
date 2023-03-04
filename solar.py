@@ -277,6 +277,9 @@ class DashImage:
 
             fc_estimate = "#DFCC10" if color else "none"
 
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1, 0.25, fc="lightgrey", ec="none"))
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.25), 1, 0.25, fc="lightgrey", ec="none"))
+
             for _ in range(0, 24):
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
                 self.graph_bars_actual.append(bar)
@@ -319,7 +322,7 @@ class DashImage:
             self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
             self.graph_line_estimate.set_ydata(data.solar_predictions_power)
 
-        self.figure.savefig(buf, format="png")
+        self.figure.savefig(buf, format="png", transparent=True)
         plot_image = Image.open(buf).convert("RGB").quantize(palette=self.img)
         self.img.paste(plot_image, bbox.topleft)
 
