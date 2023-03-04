@@ -164,8 +164,9 @@ class DisplayData:
                     minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
                     self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
-                    self.solar_hourly_prediction_values[timestamp.hour] = est / MAX_SOLAR_POWER
-                    print(f"Prediction for {timestamp.date()} {timestamp.hour}:{timestamp.minute} {est}Wh")
+                    if timestamp.minute == 0:
+                        self.solar_hourly_prediction_values[timestamp.hour] = est / MAX_SOLAR_POWER
+                        print(f"Prediction for {timestamp.date()} {timestamp.hour}:{timestamp.minute} {est}Wh")
         except Exception as e:
             print(f"Failed to obtain solar predictions: {e}")
 
@@ -221,7 +222,7 @@ class DashImage:
     graph_bars_actual = None
     graph_bars_estimate = None
 
-    def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False):
+    def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False, color: bool = False):
         if not simulate:
             from inky import InkyWHAT
 
@@ -235,8 +236,12 @@ class DashImage:
             self.height = height
 
         self.img = Image.new("P", (self.width, self.height), Color.WHITE)
-        self.img.putpalette(bw_inky_palette)
         self.draw = ImageDraw.Draw(self.img)
+
+        if color:
+            self.img.putpalette(ylw_inky_palette)
+        else:
+            self.img.putpalette(bw_inky_palette)
 
         bbox = self.graph_bbox()
         dpi = 80
@@ -248,8 +253,8 @@ class DashImage:
             self.graph_bars_actual = []
             self.graph_bars_estimate = []
 
-            for i in range(0, 24):
-                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="black", lw=0.1)
+            for _ in range(0, 24):
+                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
                 self.graph_bars_actual.append(bar)
 
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="none", ec="black", lw=0.1)
@@ -284,7 +289,6 @@ class DashImage:
 
         if self.graph_bars_estimate:
             for i in range(0, 24):
-                values = data.solar_hourly_values[i]
                 self.graph_bars_estimate[i].set_height(data.solar_hourly_prediction_values[i])
 
         if self.graph_line_estimate:
@@ -292,7 +296,7 @@ class DashImage:
             self.graph_line_estimate.set_ydata(data.solar_predictions_power)
 
         self.figure.savefig(buf, format="png")
-        plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
+        plot_image = Image.open(buf).convert("RGB").quantize(palette=self.img)
         self.img.paste(plot_image, bbox.topleft)
 
         self.draw.rectangle((bbox.topleft, bbox.bottomright), outline=Color.BLACK, width=1)
