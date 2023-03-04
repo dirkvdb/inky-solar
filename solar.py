@@ -277,8 +277,10 @@ class DashImage:
 
             fc_estimate = "#DFCC10" if color else "none"
 
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1, 0.25, fc="lightgrey", ec="none"))
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.25), 1, 0.25, fc="lightgrey", ec="none"))
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.625), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.375), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.125), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
 
             for _ in range(0, 24):
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
