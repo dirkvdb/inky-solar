@@ -86,6 +86,7 @@ class DisplayData:
     solar_values_minute = []
     solar_values_power = []
     solar_hourly_values = {}
+    solar_hourly_prediction_values = []
     solar_predictions_minute = []
     solar_predictions_power = []
 
@@ -106,6 +107,7 @@ class DisplayData:
         self.solar_hourly_values = []
         for i in range(0, 24):
             self.solar_hourly_values.append([])
+            self.solar_hourly_prediction_values.append(0)
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
@@ -162,6 +164,7 @@ class DisplayData:
                     minute_in_the_day = (timestamp.hour * 60) + 30  # put the points on the half hour marks
                     self.solar_predictions_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
+                    self.solar_hourly_prediction_values[timestamp.hour] = est / MAX_SOLAR_POWER
                     print(f"Prediction for {timestamp.date()} {timestamp.hour}:{timestamp.minute} {est}Wh")
         except Exception as e:
             print(f"Failed to obtain solar predictions: {e}")
@@ -215,7 +218,8 @@ class DashImage:
     figure = None
     graph_line_actual = None
     graph_line_estimate = None
-    graph_bars = None
+    graph_bars_actual = None
+    graph_bars_estimate = None
 
     def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False):
         if not simulate:
@@ -241,22 +245,29 @@ class DashImage:
         if bar_chart:
             x = 0
             bar_width = 1 / 24
-            self.graph_bars = []
+            self.graph_bars_actual = []
+            self.graph_bars_estimate = []
 
             for i in range(0, 24):
+                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="black", lw=0.1)
+                self.graph_bars_actual.append(bar)
+
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="none", ec="black", lw=0.1)
-                self.graph_bars.append(bar)
+                self.graph_bars_estimate.append(bar)
                 x += bar_width
 
-            for bar in self.graph_bars:
+            for bar in self.graph_bars_actual:
+                self.figure.add_artist(bar)
+
+            for bar in self.graph_bars_estimate:
                 self.figure.add_artist(bar)
         else:
             # line chart
             self.graph_line_actual = matplotlib.lines.Line2D([], [], lw=3, ls="-", snap=True)
             self.figure.add_artist(self.graph_line_actual)
 
-        self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=2, linestyle=(0, (5, 6)), snap=True)
-        self.figure.add_artist(self.graph_line_estimate)
+            self.graph_line_estimate = matplotlib.lines.Line2D([], [], lw=2, linestyle=(0, (5, 6)), snap=True)
+            self.figure.add_artist(self.graph_line_estimate)
 
     def draw_graph(self, data: DisplayData):
         buf = io.BytesIO()
@@ -266,13 +277,19 @@ class DashImage:
             self.graph_line_actual.set_xdata(data.solar_values_minute)
             self.graph_line_actual.set_ydata(data.solar_values_power)
 
-        if self.graph_bars:
+        if self.graph_bars_actual:
             for i in range(0, 24):
                 values = data.solar_hourly_values[i]
-                self.graph_bars[i].set_height(average(values) / MAX_SOLAR_POWER)
+                self.graph_bars_actual[i].set_height(average(values) / MAX_SOLAR_POWER)
 
-        self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
-        self.graph_line_estimate.set_ydata(data.solar_predictions_power)
+        if self.graph_bars_estimate:
+            for i in range(0, 24):
+                values = data.solar_hourly_values[i]
+                self.graph_bars_estimate[i].set_height(data.solar_hourly_prediction_values[i])
+
+        if self.graph_line_estimate:
+            self.graph_line_estimate.set_xdata(data.solar_predictions_minute)
+            self.graph_line_estimate.set_ydata(data.solar_predictions_power)
 
         self.figure.savefig(buf, format="png")
         plot_image = Image.open(buf).convert("P", palette=bw_inky_palette)
@@ -460,7 +477,7 @@ if __name__ == "__main__":
         # generate some data for testing
         import random
 
-        for h in range(0, 24):
+        for h in range(0, 12):
             for m in range(0, 60):
                 disp_data.append_solar_value_normalized(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
         img.render(disp_data)
