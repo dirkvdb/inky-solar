@@ -6,7 +6,7 @@
 import io, asyncio, os, pytz, json, argparse
 from datetime import datetime
 from datetime import date
-from typing import Tuple
+from typing import Sequence, Tuple
 from enum import IntEnum
 from pyrect import Rect
 from PIL import Image, ImageFont, ImageDraw
@@ -40,6 +40,9 @@ class Font(IntEnum):
     ROBOTO_BOLD = 1
     ROBOTO_LIGHT = 2
     ROBOTO_REGULAR = 3
+    SQUARE_SANS_SERIF = 4
+    BITTER_PRO_BLACK = 5
+    BITTER_PRO_BOLD = 6
 
 
 class HAlign(IntEnum):
@@ -89,8 +92,9 @@ class DisplayData:
     solar_hourly_prediction_values = []
     solar_predictions_minute = []
     solar_predictions_power = []
+    minutes_between_updates: int
 
-    def __init__(self, forecast: bool = False):
+    def __init__(self, forecast: bool = False, minutes_between_updates: int = 1):
         self.netto_current = 0.0
         self.export_current = 0.0
         self.export_today = 0.0
@@ -101,6 +105,7 @@ class DisplayData:
         self.last_solar_time = MINUTES_IN_A_DAY + 1
         self.timezone = pytz.timezone("Europe/Brussels")
         self.forecast = forecast
+        self.minutes_between_updates = minutes_between_updates
         self.reset_hourly_values()
 
     def reset_hourly_values(self):
@@ -111,7 +116,7 @@ class DisplayData:
 
     def append_solar_value(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
-        update_required = minute_in_the_day > self.last_solar_time
+        update_required = minute_in_the_day >= self.last_solar_time + self.minutes_between_updates
 
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
@@ -173,9 +178,16 @@ class DisplayData:
 
 def format_watts(val: float):
     if val < 1000:
-        return f"{val}W"
+        return "{:.0f}W".format(val)
     else:
         return "{:.1f}kW".format(val / 1000.0)
+
+
+def format_watt_hours(val: float):
+    if val < 1000:
+        return "{:.0f}Wh".format(val)
+    else:
+        return "{:.1f}kWh".format(val / 1000.0)
 
 
 WIDTH = 400
@@ -221,8 +233,9 @@ class DashImage:
     graph_line_estimate = None
     graph_bars_actual = None
     graph_bars_estimate = None
+    table = False
 
-    def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False, color: bool = False):
+    def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False, table: bool = False, color: bool = False):
         if not simulate:
             from inky import InkyWHAT
 
@@ -235,6 +248,7 @@ class DashImage:
             self.width = width
             self.height = height
 
+        self.table = table
         self.img = Image.new("P", (self.width, self.height), Color.WHITE)
         self.draw = ImageDraw.Draw(self.img)
 
@@ -253,18 +267,20 @@ class DashImage:
             self.graph_bars_actual = []
             self.graph_bars_estimate = []
 
+            fc_estimate = "yellow" if color else "none"
+
             for _ in range(0, 24):
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
                 self.graph_bars_actual.append(bar)
 
-                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="none", ec="black", lw=0.1)
+                bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc=fc_estimate, ec="black", lw=0.1)
                 self.graph_bars_estimate.append(bar)
                 x += bar_width
 
-            for bar in self.graph_bars_actual:
+            for bar in self.graph_bars_estimate:
                 self.figure.add_artist(bar)
 
-            for bar in self.graph_bars_estimate:
+            for bar in self.graph_bars_actual:
                 self.figure.add_artist(bar)
         else:
             # line chart
@@ -312,6 +328,12 @@ class DashImage:
                 self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Regular.ttf", size=font_def[1])
             elif fond_code == Font.FONT_AWESOME:
                 self.fonts[font_def] = ImageFont.truetype(FontAwesome5FreeSolid, size=font_def[1])
+            elif fond_code == Font.SQUARE_SANS_SERIF:
+                self.fonts[font_def] = ImageFont.truetype("fonts/square_sans_serif_7.ttf", size=font_def[1])
+            elif fond_code == Font.BITTER_PRO_BLACK:
+                self.fonts[font_def] = ImageFont.truetype("fonts/BitterPro-Black.ttf", size=font_def[1])
+            elif fond_code == Font.BITTER_PRO_BOLD:
+                self.fonts[font_def] = ImageFont.truetype("fonts/BitterPro-Bold.ttf", size=font_def[1])
             else:
                 raise RuntimeError("Invalid font")
 
@@ -321,14 +343,28 @@ class DashImage:
         # clear the canvas
         self.draw.rectangle((0, 0, WIDTH, HEIGHT), fill=Color.WHITE)
 
+        if self.table:
+            self.render_table(disp_data)
+        else:
+            self.render_icons(disp_data)
+        self.draw_graph(disp_data)
+        self.show()
+
+    def render_icons(self, disp_data: DisplayData):
         high_export = disp_data.export_current > 2000
 
         self.draw_info_icon(0, format_watts(disp_data.import_current), format_watts(disp_data.import_today), "plug")
         self.draw_info_icon(1, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
         self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel", colored_background=high_export)
-        self.draw_graph(disp_data)
 
-        self.show()
+    def render_table(self, disp_data: DisplayData):
+        high_export = disp_data.export_current > 2000
+
+        self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)], "plug")
+        self.draw_table_row(1, ["Zon", format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today)], "sun")
+        self.draw_table_row(
+            2, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], "solar-panel", colored_background=high_export
+        )
 
     def info_icon_bbox(self, index: int):
         icon_space_width = (self.width - (self.margin_hor * 2) - (self.icon_columns - 1) * self.padding) / self.icon_columns
@@ -336,14 +372,60 @@ class DashImage:
 
         return Rect(top_left[0], top_left[1], icon_space_width, icon_space_width)
 
-    def graph_bbox(self):
-        icon_bbox = self.info_icon_bbox(0)
+    def table_row_bbox(self, index: int) -> Rect:
+        table_width = self.width - (self.margin_hor * 2)
+        row_height = 50
+        top_left = (self.margin_hor, self.margin_ver + (index * row_height))
 
-        graph_bbox = icon_bbox.copy()
-        graph_bbox.move(0, icon_bbox.height)
-        graph_bbox.size = (self.width - (self.margin_hor * 2), self.height - (self.margin_ver * 2) - icon_bbox.height)
+        return Rect(top_left[0], top_left[1], table_width, row_height)
+
+    def table_bbox(self):
+        row_count = 3
+        row_bbox = self.table_row_bbox(0)
+        row_bbox.height = row_bbox.height * row_count
+        return row_bbox
+
+    def graph_bbox(self):
+        top_bbox = None
+        if self.table:
+            top_bbox = self.table_bbox()
+        else:
+            top_bbox = self.info_icon_bbox(0)
+
+        graph_bbox = top_bbox.copy()
+        graph_bbox.move(0, top_bbox.height)
+        graph_bbox.size = (self.width - (self.margin_hor * 2), self.height - (self.margin_ver * 2) - top_bbox.height)
 
         return graph_bbox
+
+    def draw_table_row(self, index: int, texts: Sequence[str], icon: str, colored_background: bool = False):
+        col_count = len(texts)
+        bbox = self.table_row_bbox(index)
+        fill_color = Color.COLOR if colored_background else Color.WHITE
+        self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=fill_color, outline=Color.BLACK)
+
+        text_rect = Rect(bbox.left, bbox.top, bbox.width / col_count, bbox.height)
+        self.draw.rectangle((text_rect.topleft, text_rect.bottomright), fill=Color.BLACK)
+        self.draw_text(
+            text_rect,
+            texts[0],
+            Color.WHITE,
+            (Font.BITTER_PRO_BLACK, 26),
+            HAlign.CENTER,
+            VAlign.MIDDLE,
+        )
+        text_rect.move(text_rect.width, 0)
+
+        for txt in texts[1:]:
+            self.draw_text(
+                text_rect,
+                txt,
+                Color.BLACK,
+                (Font.BITTER_PRO_BLACK, 25),
+                HAlign.CENTER,
+                VAlign.MIDDLE,
+            )
+            text_rect.move(text_rect.width, 0)
 
     def draw_info_icon(self, index: int, text_top: str, text_bottom: str, icon: str, colored_background: bool = False):
         bbox = self.info_icon_bbox(index)
@@ -359,7 +441,7 @@ class DashImage:
             text_rect,
             text_top,
             Color.BLACK,
-            (Font.ROBOTO_BOLD, 20),
+            (Font.SQUARE_SANS_SERIF, 20),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
@@ -372,7 +454,7 @@ class DashImage:
             text_rect,
             text_bottom,
             Color.BLACK,
-            (Font.ROBOTO_BOLD, 20),
+            (Font.SQUARE_SANS_SERIF, 20),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
@@ -469,10 +551,13 @@ if __name__ == "__main__":
     parser.add_argument("--mqtt-port", "-p", type=int, required=False, default=1883, help="IP address of the mqtt server")
     parser.add_argument("--simulate", "-s", action=argparse.BooleanOptionalAction, help="Support running without inky display")
     parser.add_argument("--forecast", "-f", action=argparse.BooleanOptionalAction, help="Display the solar forecast in the graph")
+    parser.add_argument("--color", "-c", action=argparse.BooleanOptionalAction, help="Use the three color palette instead of black and white")
+    parser.add_argument("--table", "-t", action=argparse.BooleanOptionalAction, help="Show table instead of icons")
     args = parser.parse_args()
 
-    img = DashImage(WIDTH, HEIGHT, simulate=args.simulate, bar_chart=True)
-    disp_data = DisplayData(forecast=args.forecast)
+    img = DashImage(WIDTH, HEIGHT, simulate=args.simulate, bar_chart=True, table=args.table, color=args.color)
+    update_rate = 5 if args.color else 1
+    disp_data = DisplayData(forecast=args.forecast, minutes_between_updates=update_rate)
 
     if args.simulate:
         if os.name == "nt":
