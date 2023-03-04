@@ -365,11 +365,9 @@ class DashImage:
     def render_table(self, disp_data: DisplayData):
         high_export = disp_data.export_current > 2000
 
-        self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)], "plug")
-        self.draw_table_row(1, ["Zon", format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today)], "sun")
-        self.draw_table_row(
-            2, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], "solar-panel", colored_background=high_export
-        )
+        self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)])
+        self.draw_table_row(1, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], colored_background=high_export)
+        self.draw_table_row(2, ["Zon", format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today)])
 
     def info_icon_bbox(self, index: int):
         icon_space_width = (self.width - (self.margin_hor * 2) - (self.icon_columns - 1) * self.padding) / self.icon_columns
@@ -402,7 +400,7 @@ class DashImage:
 
         return graph_bbox
 
-    def draw_table_row(self, index: int, texts: Sequence[str], icon: str, colored_background: bool = False):
+    def draw_table_row(self, index: int, texts: Sequence[str], colored_background: bool = False):
         col_count = len(texts)
         bbox = self.table_row_bbox(index)
         fill_color = Color.COLOR if colored_background else Color.WHITE
