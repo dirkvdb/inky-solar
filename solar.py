@@ -110,6 +110,7 @@ class DisplayData:
         self.reset_hourly_values()
 
     def reset_hourly_values(self):
+        self.last_update_time = None
         self.solar_hourly_values = []
         for i in range(0, 24):
             self.solar_hourly_values.append([])
@@ -226,7 +227,7 @@ bw_inky_palette = [
 class DashImage:
     width = 0
     height = 0
-    margin_ver = 10
+    margin_ver = 1
     margin_hor = margin_ver
     padding = 7  # padding between the internal elements
     icon_columns = 3  # number of info icons
@@ -277,10 +278,16 @@ class DashImage:
 
             fc_estimate = "#DFCC10" if color else "none"
 
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.625), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.375), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
-            self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.125), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            # # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1, 0.25, ec="black", lw=0.1, snap=True))
+            # # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.25), 1, 0.25, ec="black", lw=0.1, snap=True))
+            # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.75), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.625), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.375), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+            # self.figure.add_artist(matplotlib.patches.Rectangle((0, 0.125), 1.01, 0.125, fc="none", ec="black", lw=0.1, snap=True))
+
+            self.figure.add_artist(matplotlib.lines.Line2D([0, 1], [0.25, 0.25], color="black", aa=False, lw=0.01, ls="--", snap=True))
+            self.figure.add_artist(matplotlib.lines.Line2D([0, 1], [0.5, 0.5], color="black", lw=0.01, ls="--", snap=True))
+            self.figure.add_artist(matplotlib.lines.Line2D([0, 1], [0.75, 0.75], color="black", lw=0.01, ls="--", snap=True))
 
             for _ in range(0, 24):
                 bar = matplotlib.patches.Rectangle((x, 0), bar_width, 0, fc="black", ec="none")
@@ -364,14 +371,14 @@ class DashImage:
         self.show()
 
     def render_icons(self, disp_data: DisplayData):
-        high_export = disp_data.export_current > 2000
+        high_export = disp_data.export_current > 1000
 
         self.draw_info_icon(0, format_watts(disp_data.import_current), format_watts(disp_data.import_today), "plug")
         self.draw_info_icon(1, format_watts(disp_data.solar_current), format_watts(disp_data.solar_today), "sun")
         self.draw_info_icon(2, format_watts(disp_data.export_current), format_watts(disp_data.export_today), "solar-panel", colored_background=high_export)
 
     def render_table(self, disp_data: DisplayData):
-        high_export = disp_data.export_current > 2000
+        high_export = disp_data.export_current > 1000
 
         self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)])
         self.draw_table_row(1, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], colored_background=high_export)
@@ -412,6 +419,7 @@ class DashImage:
         col_count = len(texts)
         bbox = self.table_row_bbox(index)
         fill_color = Color.COLOR if colored_background else Color.WHITE
+        text_color = Color.WHITE if colored_background else Color.BLACK
         self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=fill_color, outline=Color.BLACK)
 
         text_rect = Rect(bbox.left, bbox.top, bbox.width / col_count, bbox.height)
@@ -430,7 +438,7 @@ class DashImage:
             self.draw_text(
                 text_rect,
                 txt,
-                Color.BLACK,
+                text_color,
                 (Font.BITTER_PRO_BLACK, 22),
                 HAlign.CENTER,
                 VAlign.MIDDLE,
@@ -524,7 +532,6 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
     data = json.loads(message.payload)
 
     if message.topic == TOPIC_SOLAR:
-        print("[{}] Solar data".format(datetime.now().strftime("%H:%M:%S")))
         disp_data.solar_current = data["P"]
         disp_data.solar_today = data["DC"]
         if disp_data.append_solar_value_normalized(datetime.now(disp_data.timezone), disp_data.solar_current):
