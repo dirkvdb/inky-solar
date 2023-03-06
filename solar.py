@@ -227,7 +227,7 @@ bw_inky_palette = [
 class DashImage:
     width = 0
     height = 0
-    margin_ver = 1
+    margin_ver = 0
     margin_hor = margin_ver
     padding = 7  # padding between the internal elements
     icon_columns = 3  # number of info icons
@@ -391,7 +391,7 @@ class DashImage:
         return Rect(top_left[0], top_left[1], icon_space_width, icon_space_width)
 
     def table_row_bbox(self, index: int) -> Rect:
-        table_width = self.width - (self.margin_hor * 2)
+        table_width = self.width - (self.margin_hor * 2) - 1
         top_left = (self.margin_hor, self.margin_ver + (index * self.table_row_height))
 
         return Rect(top_left[0], top_left[1], table_width, self.table_row_height)
@@ -411,7 +411,7 @@ class DashImage:
 
         graph_bbox = top_bbox.copy()
         graph_bbox.move(0, top_bbox.height)
-        graph_bbox.size = (self.width - (self.margin_hor * 2), self.height - (self.margin_ver * 2) - top_bbox.height)
+        graph_bbox.size = (top_bbox.width, self.height - (self.margin_ver * 2) - top_bbox.height)
 
         return graph_bbox
 
