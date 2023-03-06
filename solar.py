@@ -602,7 +602,7 @@ def on_message(_, userdata: Tuple[DisplayData, DashImage], message):
 
 
 def subscribe_to_data(mqtt_ip: str, mqtt_port: int, user_data: Tuple[DisplayData, DashImage]):
-    client = mqtt.Client("statusdisp", protocol=mqtt.MQTTv5)
+    client = mqtt.Client("solardisp", protocol=mqtt.MQTTv5)
     client.on_message = on_message
     client.user_data_set(user_data)
     client.connect(mqtt_ip, mqtt_port, keepalive=60)
