@@ -13,7 +13,9 @@ from PIL import Image, ImageFont, ImageDraw
 from font_font_awesome import FontAwesome5FreeSolid
 from forecast_solar import ForecastSolar
 import fontawesome as fa
+import paho.mqtt.publish as publish
 import paho.mqtt.client as mqtt
+import paho.mqtt.subscribe as subscribe
 import matplotlib
 from matplotlib import pyplot as plt
 
@@ -75,6 +77,48 @@ async def get_solar_forecast():
         return await forecast.estimate()
 
 
+def get_hourly_solar_production(mqtt_ip: str, mqtt_port: int):
+    macaddr = "244cab25438c"
+    channel = 8
+
+    publish.single(
+        f"{macaddr}/GET/Day/CH{channel}",
+        payload="0",
+        qos=2,
+        retain=False,
+        hostname=mqtt_ip,
+        port=mqtt_port,
+        client_id="solar",
+        protocol=mqtt.MQTTv5,
+    )
+
+    msg = subscribe.simple(
+        f"{macaddr}/POST/Day/CH{channel}",
+        qos=0,
+        msg_count=1,
+        retained=False,
+        hostname=mqtt_ip,
+        port=mqtt_port,
+        client_id="solar",
+        protocol=mqtt.MQTTv311,
+        clean_session=True,
+    )
+
+    usage = [0] * 24
+    data = msg.payload.decode("UTF-8").split("|")
+    if len(data) != 1152 + 6:
+        raise RuntimeError(f"Unexpected data length {len(data)}")
+
+    if data[4] != "0":
+        raise RuntimeError(f"Unexpected unit {data[4]}")
+
+    for (min5, val) in enumerate(range(8, 1158, 4)):
+        hour_in_the_day = (min5 * 5) // 60
+        usage[hour_in_the_day] = max(usage[hour_in_the_day], int(data[val]))
+
+    return usage
+
+
 class DisplayData:
     netto_current: float
     export_current: float
@@ -94,8 +138,10 @@ class DisplayData:
     solar_predictions_minute = []
     solar_predictions_power = []
     minutes_between_updates: int
+    mqtt_ip = None
+    mqtt_port = None
 
-    def __init__(self, forecast: bool = False, minutes_between_updates: int = 1):
+    def __init__(self, mqtt_ip: str, mqtt_port: int = 1883, forecast: bool = False, minutes_between_updates: int = 1):
         self.netto_current = 0.0
         self.export_current = 0.0
         self.export_today = 0.0
@@ -107,14 +153,14 @@ class DisplayData:
         self.timezone = pytz.timezone("Europe/Brussels")
         self.forecast = forecast
         self.minutes_between_updates = minutes_between_updates
+        self.mqtt_ip = mqtt_ip
+        self.mqtt_port = mqtt_port
         self.reset_hourly_values()
 
     def reset_hourly_values(self):
         self.last_update_time = None
-        self.solar_hourly_values = []
-        for i in range(0, 24):
-            self.solar_hourly_values.append([])
-            self.solar_hourly_prediction_values.append(0)
+        self.solar_hourly_values = [0] * 24
+        self.solar_hourly_prediction_values = [0] * 24
 
     # def append_solar_value(self, timestamp: datetime, value: float):
     #     minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
@@ -156,13 +202,19 @@ class DisplayData:
             self.solar_values_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
             self.solar_values_power.append(value / MAX_SOLAR_POWER)
 
-        self.solar_hourly_values[timestamp.hour].append(value)
         if update_required:
             self.update_solar_prediction_if_needed()
+            self.update_solar_data()
             self.last_update_time = minute_in_the_day
 
         self.last_solar_time = minute_in_the_day
         return update_required
+
+    def update_solar_data(self):
+        try:
+            self.solar_hourly_values = get_hourly_solar_production(self.mqtt_ip, self.mqtt_port)
+        except Exception as e:
+            print(f"Failed to obtain hourly solar values: {e}")
 
     def update_solar_prediction_if_needed(self):
         if (not self.forecast) or len(self.solar_predictions_minute) > 0:
@@ -320,8 +372,7 @@ class DashImage:
 
         if self.graph_bars_actual:
             for i in range(0, 24):
-                values = data.solar_hourly_values[i]
-                self.graph_bars_actual[i].set_height(average(values) / MAX_SOLAR_POWER)
+                self.graph_bars_actual[i].set_height(data.solar_hourly_values[i] / MAX_SOLAR_POWER)
 
         if self.graph_bars_estimate:
             for i in range(0, 24):
@@ -574,19 +625,20 @@ if __name__ == "__main__":
 
     img = DashImage(WIDTH, HEIGHT, simulate=args.simulate, bar_chart=True, table=args.table, color=args.color)
     update_rate = 5 if args.color else 1
-    disp_data = DisplayData(forecast=args.forecast, minutes_between_updates=update_rate)
+    disp_data = DisplayData(args.mqtt_addr, args.mqtt_port, forecast=args.forecast, minutes_between_updates=update_rate)
 
     if args.simulate:
         if os.name == "nt":
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
         # generate some data for testing
-        import random
+        # import random
 
-        for h in range(0, 12):
-            for m in range(0, 60):
-                disp_data.append_solar_value_normalized(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
-        img.render(disp_data)
-    else:
-        subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
-        input("Press Enter to continue.\n")
+        # for h in range(0, 12):
+        #     for m in range(0, 60):
+        #         disp_data.append_solar_value_normalized(datetime(2023, 2, 1, hour=h, minute=m), 2000.0 + (random.random() * 3000))
+    #     disp_data.update_solar_data()
+    #     img.render(disp_data)
+    # else:
+    subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
+    input("Press Enter to continue.\n")
