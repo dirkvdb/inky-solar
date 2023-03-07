@@ -130,6 +130,7 @@ class DisplayData:
     solar_today: float
     last_solar_time: int
     last_update_time: int = None
+    last_solar_update_time: int = None
     forecast: bool
     timezone = None
     solar_values_minute = []
@@ -139,6 +140,7 @@ class DisplayData:
     solar_predictions_minute = []
     solar_predictions_power = []
     minutes_between_updates: int
+    minutes_between_hourly_solar_updates: int = 5
     mqtt_ip = None
     mqtt_port = None
 
@@ -163,33 +165,12 @@ class DisplayData:
         self.solar_hourly_values = [0] * 24
         self.solar_hourly_prediction_values = [0] * 24
 
-    # def append_solar_value(self, timestamp: datetime, value: float):
-    #     minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
-    #     update_required = self.last_update_time == None or minute_in_the_day >= self.last_update_time + self.minutes_between_updates
-
-    #     if minute_in_the_day < self.last_solar_time:
-    #         # new day started, reset the timeseries to the new value
-    #         self.reset_hourly_values()
-    #         self.solar_predictions_minute = []
-    #         self.solar_predictions_power = []
-    #         self.solar_values_minute = [minute_in_the_day]
-    #         self.solar_values_power = [value]
-    #     else:
-    #         # append to todays timeseries
-    #         self.solar_values_minute.append(minute_in_the_day)
-    #         self.solar_values_power.append(value)
-
-    #     self.solar_hourly_values[timestamp.hour].append(value)
-    #     if update_required:
-    #         self.update_solar_prediction_if_needed()
-    #         self.last_update_time = minute_in_the_day
-
-    #     self.last_solar_time = minute_in_the_day
-    #     return update_required
-
     def append_solar_value_normalized(self, timestamp: datetime, value: float):
         minute_in_the_day = (timestamp.hour * 60) + timestamp.minute
         update_required = self.last_update_time == None or minute_in_the_day >= self.last_update_time + self.minutes_between_updates
+        solar_update_required = (
+            self.last_solar_update_time == None or minute_in_the_day >= self.last_solar_update_time + self.minutes_between_hourly_solar_updates
+        )
 
         if minute_in_the_day < self.last_solar_time:
             # new day started, reset the timeseries to the new value
@@ -203,9 +184,12 @@ class DisplayData:
             self.solar_values_minute.append(minute_in_the_day / MINUTES_IN_A_DAY)
             self.solar_values_power.append(value / MAX_SOLAR_POWER)
 
-        if update_required:
+        if solar_update_required:
             self.update_solar_prediction_if_needed()
             self.update_solar_data()
+            self.last_solar_update_time = minute_in_the_day
+
+        if update_required:
             self.last_update_time = minute_in_the_day
 
         self.last_solar_time = minute_in_the_day
