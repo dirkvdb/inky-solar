@@ -1,0 +1,12 @@
+[Unit]
+Description=Show solar statistics on the inky display
+After=multi-user.target
+
+[Service]
+Type=simple
+Restart=always
+User=dirk
+ExecStart=/usr/bin/python /home/dirk/inky-solar/solar.py --mqtt-addr=192.168.1.13 --forecast --color --table
+
+[Install]
+WantedBy=multi-user.target
