@@ -3,7 +3,7 @@
 
 # from inky.auto import auto
 
-import io, asyncio, os, pytz, json, argparse
+import io, asyncio, os, pytz, json, time, argparse
 import syslog
 from datetime import datetime
 from datetime import date
@@ -389,21 +389,22 @@ class DashImage:
 
     def __load_font(self, font_def: Tuple[Font, int]):
         if font_def not in self.fonts:
+            fonts_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "fonts")
             fond_code = font_def[0]
             if fond_code == Font.ROBOTO_BOLD:
-                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Bold.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "Roboto-Bold.ttf"), size=font_def[1])
             elif fond_code == Font.ROBOTO_LIGHT:
-                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Light.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "Roboto-Light.ttf"), size=font_def[1])
             elif fond_code == Font.ROBOTO_REGULAR:
-                self.fonts[font_def] = ImageFont.truetype("fonts/Roboto-Regular.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "Roboto-Regular.ttf"), size=font_def[1])
             elif fond_code == Font.FONT_AWESOME:
                 self.fonts[font_def] = ImageFont.truetype(FontAwesome5FreeSolid, size=font_def[1])
             elif fond_code == Font.SQUARE_SANS_SERIF:
-                self.fonts[font_def] = ImageFont.truetype("fonts/square_sans_serif_7.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "square_sans_serif_7.ttf"), size=font_def[1])
             elif fond_code == Font.BITTER_PRO_BLACK:
-                self.fonts[font_def] = ImageFont.truetype("fonts/BitterPro-Black.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "BitterPro-Black.ttf"), size=font_def[1])
             elif fond_code == Font.BITTER_PRO_BOLD:
-                self.fonts[font_def] = ImageFont.truetype("fonts/BitterPro-Bold.ttf", size=font_def[1])
+                self.fonts[font_def] = ImageFont.truetype(os.path.join(fonts_path, "BitterPro-Bold.ttf"), size=font_def[1])
             else:
                 raise RuntimeError("Invalid font")
 
@@ -478,7 +479,7 @@ class DashImage:
             text_rect,
             texts[0],
             Color.WHITE,
-            (Font.BITTER_PRO_BLACK, 22),
+            (Font.BITTER_PRO_BLACK, 25),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
@@ -489,7 +490,7 @@ class DashImage:
                 text_rect,
                 txt,
                 text_color,
-                (Font.BITTER_PRO_BLACK, 22),
+                (Font.BITTER_PRO_BLACK, 30),
                 HAlign.CENTER,
                 VAlign.MIDDLE,
             )
@@ -642,4 +643,6 @@ if __name__ == "__main__":
     # else:
     subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
     syslog.syslog("Solar service started")
-    input("")
+
+    while True:
+        time.sleep(600)
