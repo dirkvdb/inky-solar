@@ -293,7 +293,7 @@ class DashImage:
     graph_bars_actual = None
     graph_bars_estimate = None
     table = False
-    table_row_height = 40
+    table_row_height = 45
 
     def __init__(self, width: int, height: int, simulate: bool = False, bar_chart: bool = False, table: bool = False, color: bool = False):
         if not simulate:
@@ -431,9 +431,15 @@ class DashImage:
     def render_table(self, disp_data: DisplayData):
         high_export = disp_data.export_current > 1000
 
-        self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)])
-        self.draw_table_row(1, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], colored_background=high_export)
-        self.draw_table_row(2, ["Zon", format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today)])
+        # self.draw_table_row(0, ["Import", format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today)])
+        # self.draw_table_row(1, ["Export", format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today)], colored_background=high_export)
+        # self.draw_table_row(2, ["Zon", format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today)])
+
+        self.draw_table_row_icon_center(0, format_watts(disp_data.import_current), format_watt_hours(disp_data.import_today), "plug")
+        self.draw_table_row_icon_center(
+            1, format_watts(disp_data.export_current), format_watt_hours(disp_data.export_today), "solar-panel", colored_background=high_export
+        )
+        self.draw_table_row_icon_center(2, format_watts(disp_data.solar_current), format_watt_hours(disp_data.solar_today), "sun")
 
     def info_icon_bbox(self, index: int):
         icon_space_width = (self.width - (self.margin_hor * 2) - (self.icon_columns - 1) * self.padding) / self.icon_columns
@@ -495,6 +501,40 @@ class DashImage:
                 VAlign.MIDDLE,
             )
             text_rect.move(text_rect.width, 0)
+
+    def draw_table_row_icon_center(self, index: int, left: str, right: str, icon: str, colored_background: bool = False):
+        bbox = self.table_row_bbox(index)
+        fill_color = Color.COLOR if colored_background else Color.WHITE
+        text_color = Color.WHITE if colored_background else Color.BLACK
+        self.draw.rectangle((bbox.topleft, bbox.bottomright), fill=fill_color, outline=Color.BLACK)
+
+        icon_size = bbox.height
+        text_width = (bbox.width - icon_size) / 2
+
+        text_rect = Rect(bbox.left, bbox.top, text_width, bbox.height)
+        self.draw_text(
+            text_rect,
+            left,
+            text_color,
+            (Font.BITTER_PRO_BLACK, 30),
+            HAlign.CENTER,
+            VAlign.MIDDLE,
+        )
+
+        icon_rect = Rect(text_rect.topright.x, text_rect.topright.y, icon_size, icon_size)
+        self.draw.rectangle((icon_rect.topleft, icon_rect.bottomright), fill=Color.BLACK)
+        self.draw_icon(icon_rect, icon, Color.WHITE, 25)
+
+        text_rect.move(text_rect.width + icon_rect.width, 0)
+
+        self.draw_text(
+            text_rect,
+            right,
+            text_color,
+            (Font.BITTER_PRO_BLACK, 30),
+            HAlign.CENTER,
+            VAlign.MIDDLE,
+        )
 
     def draw_info_icon(self, index: int, text_top: str, text_bottom: str, icon: str, colored_background: bool = False):
         bbox = self.info_icon_bbox(index)
