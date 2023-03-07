@@ -4,6 +4,7 @@
 # from inky.auto import auto
 
 import io, asyncio, os, pytz, json, argparse
+import syslog
 from datetime import datetime
 from datetime import date
 from typing import Sequence, Tuple
@@ -214,7 +215,7 @@ class DisplayData:
         try:
             self.solar_hourly_values = get_hourly_solar_production(self.mqtt_ip, self.mqtt_port)
         except Exception as e:
-            print(f"Failed to obtain hourly solar values: {e}")
+            syslog.syslog(syslog.LOG_WARNING, f"Failed to obtain hourly solar values: {e}")
 
     def update_solar_prediction_if_needed(self):
         if (not self.forecast) or len(self.solar_predictions_minute) > 0:
@@ -222,7 +223,6 @@ class DisplayData:
             return
 
         try:
-            print("Update solar predictions")
             estimations = asyncio.run(get_solar_forecast())
             for timestamp, est in estimations.watts.items():
                 if timestamp.date() == date.today():
@@ -231,9 +231,8 @@ class DisplayData:
                     self.solar_predictions_power.append(est / MAX_SOLAR_POWER)
                     if timestamp.minute == 0:
                         self.solar_hourly_prediction_values[timestamp.hour] = est / MAX_SOLAR_POWER
-                        print(f"Prediction for {timestamp.date()} {timestamp.hour}:{timestamp.minute} {est}Wh")
         except Exception as e:
-            print(f"Failed to obtain solar predictions: {e}")
+            syslog.syslog(syslog.LOG_WARNING, f"Failed to obtain solar predictions: {e}")
 
 
 def format_watts(val: float):
@@ -529,7 +528,6 @@ class DashImage:
         )
 
     def show(self):
-        print("[{}] Update".format(datetime.now().strftime("%H:%M:%S")))
         if self.display:
             self.display.set_image(self.img)
             self.display.show()
@@ -614,6 +612,8 @@ def subscribe_to_data(mqtt_ip: str, mqtt_port: int, user_data: Tuple[DisplayData
 
 
 if __name__ == "__main__":
+    syslog.openlog(logoption=syslog.LOG_PID, facility=syslog.LOG_DAEMON)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--mqtt-addr", "-m", type=str, required=True, help="IP address of the mqtt server")
     parser.add_argument("--mqtt-port", "-p", type=int, required=False, default=1883, help="IP address of the mqtt server")
@@ -641,4 +641,5 @@ if __name__ == "__main__":
     #     img.render(disp_data)
     # else:
     subscribe_to_data(args.mqtt_addr, args.mqtt_port, (disp_data, img))
-    input("Press Enter to continue.\n")
+    syslog.syslog("Solar service started")
+    input("")
