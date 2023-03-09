@@ -162,6 +162,7 @@ class DisplayData:
 
     def reset_hourly_values(self):
         self.last_update_time = None
+        self.last_solar_update_time = None
         self.solar_hourly_values = [0] * 24
         self.solar_hourly_prediction_values = [0] * 24
 
@@ -500,7 +501,7 @@ class DashImage:
             text_rect,
             left,
             text_color,
-            (Font.BITTER_PRO_BLACK, 30),
+            (Font.BITTER_PRO_BLACK, 35),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
@@ -515,7 +516,7 @@ class DashImage:
             text_rect,
             right,
             text_color,
-            (Font.BITTER_PRO_BLACK, 30),
+            (Font.BITTER_PRO_BLACK, 35),
             HAlign.CENTER,
             VAlign.MIDDLE,
         )
